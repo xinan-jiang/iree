@@ -1,0 +1,6 @@
+func @dot_384x512x128() -> tensor<384x128xf32> attributes { iree.module.export } {
+    %lhs = iree.unfoldable_constant dense<1.0> : tensor<384x512xf32>
+    %rhs = iree.unfoldable_constant dense<1.0> : tensor<512x128xf32>
+    %0 = "mhlo.dot"(%lhs, %rhs) : (tensor<384x512xf32>, tensor<512x128xf32>) -> tensor<384x128xf32>
+    return %0 : tensor<384x128xf32>
+}

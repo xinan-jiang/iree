@@ -24,6 +24,12 @@ namespace iree_compiler {
 /// linalg::MatmulOp.
 std::unique_ptr<FunctionPass> createConvImg2ColMatmulConversionPass();
 
+/// Convert std.exp op into a reduced range polynomial approximation.
+std::unique_ptr<FunctionPass> createFastExpApproximationConversionPass();
+
+void populateFastExpConversionPatterns(OwningRewritePatternList &patterns,
+                                       MLIRContext *context);
+
 /// Distribute linalg ops among iree.workgroup logical threads.
 std::unique_ptr<OperationPass<ModuleOp>> createLinalgTileAndDistributePass();
 

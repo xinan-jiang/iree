@@ -37,6 +37,7 @@ LLVMTargetOptions getDefaultLLVMTargetOptions() {
   // LLVM -O3.
   targetOptions.optLevel = llvm::PassBuilder::OptimizationLevel::O3;
   targetOptions.options.FloatABIType = llvm::FloatABI::Hard;
+  targetOptions.options.AllowFPOpFusion = llvm::FPOpFusion::Fast;
   return targetOptions;
 }
 

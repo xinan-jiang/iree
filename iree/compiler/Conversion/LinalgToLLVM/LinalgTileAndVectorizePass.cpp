@@ -46,6 +46,17 @@ struct TileWorkgroups : public linalg::LinalgBaseTilingPattern {
   }
 };
 
+class RemoveFillOp : public OpRewritePattern<linalg::FillOp> {
+ public:
+  using OpRewritePattern<linalg::FillOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::FillOp op,
+                                PatternRewriter &rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 }  // namespace
 
 namespace {

@@ -34,6 +34,13 @@ static llvm::cl::opt<bool> convImg2ColConversion(
                    "linag.matmul"),
     llvm::cl::init(false));
 
+static llvm::cl::opt<bool> fastExpConversion(
+    "iree-codegen-linalg-to-llvm-fast-exp",
+    llvm::cl::desc("Enable rewriting linalg.conv linalg.generic that does "
+                   "img2col buffer packing + "
+                   "linag.matmul"),
+    llvm::cl::init(false));
+
 void addLinalgToLLVMPasses(OpPassManager &passManager) {
   // Distribute linalg op among a 3d grid of parallel threads. Tile each
   // workgroup thread memory then vectorize the linalg op.

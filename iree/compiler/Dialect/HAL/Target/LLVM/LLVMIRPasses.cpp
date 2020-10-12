@@ -40,7 +40,8 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(
   // TODO(ataei): Once we have an AOT backend pass cpu and cpu-features
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       targetOptions.targetTriple, "generic" /* cpu e.g k8*/,
-      "" /* cpu features e.g avx512fma*/, targetOptions.options, {}));
+      "" /* cpu features e.g avx512fma*/, targetOptions.options,
+      llvm::Reloc::PIC_));
   return machine;
 }
 
@@ -72,8 +73,12 @@ LogicalResult runLLVMIRPasses(const LLVMTargetOptions &options,
   modulePassManager =
       passBuilder.buildPerModuleDefaultPipeline(options.optLevel);
   modulePassManager.run(*module, moduleAnalysisManager);
-
-  if (llvm::verifyModule(*module)) return failure();
+  std::string error_str;
+  llvm::raw_string_ostream error_os(error_str);
+  if (llvm::verifyModule(*module, &error_os)) {
+    printf("Error-verifyModule: %s\n", error_str.c_str());
+    return failure();
+  }
 
   return success();
 }

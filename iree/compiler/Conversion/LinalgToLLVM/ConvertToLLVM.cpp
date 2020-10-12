@@ -419,6 +419,10 @@ void ConvertToLLVMPass::runOnOperation() {
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
     signalPassFailure();
   }
+  // LLVMIR -> LLVMIR conversion patterns.
+  OwningRewritePatternList postLLVMConversionPatters;
+  populateFastExpConversionPatterns(postLLVMConversionPatters, &getContext());
+  applyPatternsAndFoldGreedily(module, std::move(postLLVMConversionPatters));
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> createConvertToLLVMPass() {
