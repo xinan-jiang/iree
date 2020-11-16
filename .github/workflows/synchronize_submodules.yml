@@ -20,6 +20,7 @@ on:
   push:
     branches:
       - google
+      - submodule-failure
 
 jobs:
   synchronize:
