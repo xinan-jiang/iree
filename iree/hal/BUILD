@@ -65,6 +65,19 @@ cc_test(
 )
 
 #===------------------------------------------------------------------------===#
+# Executable Library API
+#===------------------------------------------------------------------------===#
+# NOTE: this must remain a header-only library and take no dependencies on any
+# other IREE code. It is used to define the ABI between compiled executables
+# produced by the IREE code generation backends or provided by users and as such
+# should be treated as version-independent from the tip-of-tree IREE repo.
+
+cc_library(
+    name = "executable_library",
+    hdrs = ["executable_library.h"],
+)
+
+#===------------------------------------------------------------------------===#
 # Implementation
 #===------------------------------------------------------------------------===#
 # TODO(benvanik): rename to :cc and expose via an api_cc.h.

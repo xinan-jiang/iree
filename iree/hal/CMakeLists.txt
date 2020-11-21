@@ -54,6 +54,14 @@ iree_cc_test(
 
 iree_cc_library(
   NAME
+    executable_library
+  HDRS
+    "executable_library.h"
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     hal
   HDRS
     "allocator.h"
