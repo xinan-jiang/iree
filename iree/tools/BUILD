@@ -73,6 +73,7 @@ cc_library(
         "//iree/compiler/Dialect/IREE/Transforms",
         "//iree/compiler/Dialect/Sequence/IR",
         "//iree/compiler/Dialect/Shape/Conversion",
+        "//iree/compiler/Dialect/Ruy/Conversion/LinalgToRuy:Conversion",
         "//iree/compiler/Dialect/Shape/IR",
         "//iree/compiler/Dialect/Shape/Transforms",
         "//iree/compiler/Dialect/VM/Analysis",
