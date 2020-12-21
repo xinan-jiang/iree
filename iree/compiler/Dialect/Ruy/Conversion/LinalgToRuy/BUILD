@@ -28,6 +28,7 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:LinalgOps",
         "@llvm-project//mlir:StandardOps",
+        "@llvm-project//mlir:SCFDialect",
         "@llvm-project//mlir:Transforms",
         "//iree/compiler/Dialect/Ruy/IR",
         "//iree/compiler/Dialect/Ruy/IR:RuyDialect"

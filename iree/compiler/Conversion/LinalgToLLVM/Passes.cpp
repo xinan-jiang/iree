@@ -47,6 +47,8 @@ static llvm::cl::opt<bool> fastExpConversion(
     llvm::cl::init(false));
 
 void addLinalgToLLVMPasses(OpPassManager &passManager) {
+  // Add ruy stuff -> to scf or llvm
+
   // Linalg on tensors directly lowers to loops for now.
   if (!clEnableLinalgOnTensors) {
     // Distribute linalg op among a 3d grid of parallel threads. Tile each

@@ -18,6 +18,9 @@
 #include "iree/compiler/Dialect/Ruy/IR/RuyDialect.h"
 #include "iree/compiler/Dialect/Ruy/IR/RuyOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/SCF/EDSC/Builders.h"
+#include "mlir/Dialect/StandardOps/EDSC/Builders.h"
+#include "mlir/Dialect/StandardOps/EDSC/Intrinsics.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -41,10 +44,76 @@ class MatmulOpToPaddedMatmulPattern
   }
 };
 
+/*
+
+lina.ops ----> ruy.ops
+(linalg ops illegal)
+
+
+*/
+
+class PaddedMatmulToSCFPattern : public OpRewritePattern<ruy::PaddedMatmulOp> {
+ public:
+  using OpRewritePattern<ruy::PaddedMatmulOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ruy::PaddedMatmulOp op,
+                                PatternRewriter &rewriter) const override {
+    auto lhsVal = op.lhs();
+    auto rhsVal = op.rhs();
+    auto dstVal = op.dst();
+    auto dstValType = dstVal.getType().cast<MemRefType>();
+    auto dstShape = dstValType.getShape();  // ArrayRef<int64_t>
+    auto M = dstShape[0];
+    auto N = dstShape[1];
+    auto rhsValType = dstVal.getType().cast<MemRefType>();
+    auto rhsShape = rhsValType.getShape();
+
+    edsc::ScopedContext scope(rewriter, op.getLoc());
+
+    // dim(0)
+    auto K = rhsShape[0];
+
+    Value zero = edsc::intrinsics::std_constant_index(0);
+    Value step = edsc::intrinsics::std_constant_index(1);
+
+    Value boundM = edsc::intrinsics::std_constant_index(M);
+    Value boundN = edsc::intrinsics::std_constant_index(N);
+    Value boundK = edsc::intrinsics::std_constant_index(K);
+
+    /*
+     func foo(op) {
+       (ruy.padded_matmul) <- rewriter
+
+     }
+    */
+
+    edsc::loopNestBuilder(zero, boundM, step, [&](Value m) {
+      edsc::loopNestBuilder(zero, boundN, step, [&](Value n) {
+        // zero(m, n) =
+
+        edsc::loopNestBuilder(zero, boundK, step, [&](Value k) {
+          Value lhs_val =
+              edsc::intrinsics::std_load(lhsVal, ArrayRef<Value>{m, k});
+          Value rhs_val =
+              edsc::intrinsics::std_load(rhsVal, ArrayRef<Value>{k, n});
+          Value dst_val =
+              edsc::intrinsics::std_load(dstVal, ArrayRef<Value>{m, n});
+          Value mul_f = edsc::intrinsics::std_mulf(lhs_val, rhs_val);
+          Value res = edsc::intrinsics::std_addf(dst_val, mul_f);
+          edsc::intrinsics::std_store(res, dstVal, ArrayRef<Value>{m, n});
+        });
+      });
+    });
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct ConvertMatmulToPaddedMatmulPass
     : public PassWrapper<ConvertMatmulToPaddedMatmulPass, FunctionPass> {
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<linalg::LinalgDialect, ruy::RuyDialect>();
+    registry.insert<linalg::LinalgDialect, ruy::RuyDialect, scf::SCFDialect>();
   }
   void runOnFunction() override;
 };
@@ -61,6 +130,17 @@ void ConvertMatmulToPaddedMatmulPass::runOnFunction() {
   conversionPatterns.insert<MatmulOpToPaddedMatmulPattern>(context);
 
   applyPatternsAndFoldGreedily(funcOp, std::move(conversionPatterns));
+
+  /// Ultimately we want a conversion from ruy.padded_matmul -> scf
+  /// so create RuyToSCF directory and add a rewrite pass or even better a
+  /// dialect conversion pass.
+
+  OwningRewritePatternList toSCFConversionPatterns;  // list of patterns
+  toSCFConversionPatterns.insert<PaddedMatmulToSCFPattern>(
+      context);  // add your pattern to your list
+  applyPatternsAndFoldGreedily(
+      funcOp,
+      std::move(toSCFConversionPatterns));  // apply the pattern conversion.
 }
 
 std::unique_ptr<FunctionPass> createConvertMatmulToPaddedMatmulPass() {
