@@ -63,8 +63,14 @@ void addLinalgToLLVMPasses(OpPassManager &passManager) {
           createConvImg2ColMatmulConversionPass());
     }
 
+    passManager.addNestedPass<FuncOp>(createCSEPass());
+
     passManager.addNestedPass<FuncOp>(
         createLinalgTileAndVectorizeWorkgroupsPass());
+
+    passManager.addNestedPass<FuncOp>(createCSEPass());
+
+    passManager.addNestedPass<FuncOp>(createVectorTransferOptimizationPass());
   }
   passManager.addNestedPass<FuncOp>(createPlanConvLoopOrderPass());
 

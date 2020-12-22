@@ -481,7 +481,8 @@ void LinalgTileAndFusePass::runOnOperation() {
     TileAndFuseOptions tileAndFuseOptions = {getWorkgroupDistributionOptions(),
                                              allocateWorkgroupMemory};
     if (failed(tileAndFuseLinalgBufferOps(funcOp, linalgOpsVec, dependenceGraph,
-                                          launchConfig, tileAndFuseOptions)) ||
+                                          launchConfig, tileAndFuseOptions,
+                                          getWorkgroupMarker())) ||
         failed(updateWorkGroupSize(funcOp, launchConfig.getWorkgroupSize()))) {
       return signalPassFailure();
     }

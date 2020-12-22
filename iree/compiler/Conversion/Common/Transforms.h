@@ -35,8 +35,11 @@ void applyCanonicalizationPatternsForTiling(MLIRContext *context,
                                             Operation *op);
 
 struct TileAndFuseOptions {
-  linalg::LinalgLoopDistributionOptions distributionOptions;
+  Optional<linalg::LinalgLoopDistributionOptions> distributionOptions;
   linalg::AllocBufferCallbackFn allocationFn = nullptr;
+  int tileLevel = 0;
+  linalg::LinalgTilingLoopType loopType =
+      linalg::LinalgTilingLoopType::ParallelLoops;
 };
 /// Method to tile and fuse sequence of Linalg operations in `linalgOps`. Uses
 /// the tile sizes for the first level of tiling specified in
@@ -50,7 +53,8 @@ struct TileAndFuseOptions {
 LogicalResult tileAndFuseLinalgBufferOps(
     FuncOp funcOp, ArrayRef<linalg::LinalgOp> linalgOps,
     const linalg::LinalgDependenceGraph &dependenceGraph,
-    const LaunchConfig &launchConfig, const TileAndFuseOptions &options);
+    const LaunchConfig &launchConfig, const TileAndFuseOptions &options,
+    StringRef marker);
 
 }  // namespace iree_compiler
 }  // namespace mlir

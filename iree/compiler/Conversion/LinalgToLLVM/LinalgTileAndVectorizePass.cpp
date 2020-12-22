@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "iree/compiler/Conversion/CodegenUtils/FunctionUtils.h"
 #include "iree/compiler/Conversion/CodegenUtils/MarkerUtils.h"
 #include "iree/compiler/Conversion/CodegenUtils/MatmulCodegenStrategy.h"
+#include "iree/compiler/Conversion/Common/Transforms.h"
 #include "iree/compiler/Conversion/LinalgToLLVM/KernelDispatch.h"
 #include "mlir/Conversion/StandardToSPIRV/ConvertStandardToSPIRV.h"
 #include "mlir/Dialect/Linalg/Transforms/Hoisting.h"
@@ -64,61 +66,49 @@ void TileAndVectorizeWorkgroups::runOnFunction() {
   MLIRContext *context = &getContext();
   CPUKernelDispatch cpuKernelDispatch;
 
-  // Workgroup first level of tiling.
-  {
-    // First level of tiling patterns. (workgroups memory)
-    OwningRewritePatternList l1patterns;
-    l1patterns.insert<TileWorkgroups<linalg::MatmulOp>,
-                      TileWorkgroups<linalg::BatchMatmulOp>>(
-        context,
-        linalg::LinalgTilingOptions().setTileSizeComputationFunction(
-            [&cpuKernelDispatch](OpBuilder &builder, Operation *operation)
-                -> SmallVector<Value, 4> {
-              return TileSizeFn::get<TilingLevel::Level1Tiles>(
-                  cpuKernelDispatch, builder, operation);
-            }),
-        linalg::LinalgMarker(
-            Identifier::get(getWorkgroupMarker(), context),
-            Identifier::get(getWorkgroupL1TileMarker(), context)));
+  if (!isEntryPoint(funcOp)) return;
 
-    applyPatternsAndFoldGreedily(funcOp, std::move(l1patterns));
+  Region &body = funcOp.getBody();
+  if (!llvm::hasSingleElement(body.getBlocks())) {
+    funcOp.emitError("unhandled dispatch function with multiple blocks");
+    return signalPassFailure();
+  }
+  Block &block = body.front();
+  auto linalgOps = block.getOps<linalg::LinalgOp>();
+  if (linalgOps.empty()) return;
+
+  SmallVector<linalg::LinalgOp, 4> linalgOpsVec =
+      llvm::to_vector<4>(llvm::map_range(
+          linalgOps, [](Operation *op) { return cast<linalg::LinalgOp>(op); }));
+  linalg::Aliases aliases;
+  linalg::LinalgDependenceGraph dependenceGraph(aliases, linalgOpsVec);
+  Optional<LaunchConfig> launchConfigOpt =
+      initCPULaunchConfig(context, dependenceGraph, linalgOpsVec);
+  if (!launchConfigOpt) {
+    funcOp.emitError("unable to find launch configuration");
+    return signalPassFailure();
+  }
+  LaunchConfig &launchConfig = *launchConfigOpt;
+
+  TileAndFuseOptions tileAndFuseOptions;
+
+  tileAndFuseOptions.tileLevel = 2;
+  tileAndFuseOptions.loopType = linalg::LinalgTilingLoopType::Loops;
+
+  if (failed(tileAndFuseLinalgBufferOps(funcOp, linalgOpsVec, dependenceGraph,
+                                        launchConfig, tileAndFuseOptions,
+                                        getVectorizeMarker()))) {
+    return signalPassFailure();
   }
 
-  // Second level of tiling. (workgroups memroey -> vectors)
-  {
-    OwningRewritePatternList l2patterns;
-    l2patterns.insert<TileWorkgroups<linalg::MatmulOp>,
-                      TileWorkgroups<linalg::BatchMatmulOp>>(
-        context,
-        linalg::LinalgTilingOptions().setTileSizeComputationFunction(
-            [&cpuKernelDispatch](OpBuilder &builder, Operation *operation)
-                -> SmallVector<Value, 4> {
-              return TileSizeFn::get<TilingLevel::Level2Tiles>(
-                  cpuKernelDispatch, builder, operation);
-            }),
-        linalg::LinalgMarker(
-            Identifier::get(getWorkgroupL1TileMarker(), context),
-            Identifier::get(getVectorizeMarker(), context)));
-
-    applyPatternsAndFoldGreedily(funcOp, std::move(l2patterns));
-  }
-
-  // Apply canonicalization.
-  {
-    OwningRewritePatternList canonicalizationPatterns;
-    canonicalizationPatterns.insert<AffineMinCanonicalizationPattern>(context);
-    AffineApplyOp::getCanonicalizationPatterns(canonicalizationPatterns,
-                                               context);
-    AffineMinOp::getCanonicalizationPatterns(canonicalizationPatterns, context);
-    SubViewOp::getCanonicalizationPatterns(canonicalizationPatterns, context);
-    applyPatternsAndFoldGreedily(funcOp, std::move(canonicalizationPatterns));
-  }
+  launchConfig.finalize(funcOp);
 
   // Apply vectorization patterns.
   {
     OwningRewritePatternList vectorizationPatterns;
     vectorizationPatterns
-        .insert<linalg::LinalgVectorizationPattern<linalg::MatmulOp>,
+        .insert<linalg::LinalgVectorizationPattern<linalg::FillOp>,
+                linalg::LinalgVectorizationPattern<linalg::MatmulOp>,
                 linalg::LinalgVectorizationPattern<linalg::BatchMatmulOp>>(
             context, linalg::LinalgMarker(
                          Identifier::get(getVectorizeMarker(), context)));

@@ -119,7 +119,8 @@ static LogicalResult promoteFusedViews(OpBuilder &builder,
 /// loops in the operation based on the configuration.
 static linalg::LinalgOp tileUnfusedLoops(
     OpBuilder &builder, linalg::LinalgOp linalgOp,
-    const std::set<unsigned> &fusedLoopDims, ArrayRef<int64_t> tileSizesRef) {
+    const std::set<unsigned> &fusedLoopDims, ArrayRef<int64_t> tileSizesRef,
+    TileAndFuseOptions options) {
   SmallVector<int64_t, 4> tileSizes = llvm::to_vector<4>(tileSizesRef);
   tileSizes.resize(linalgOp.getNumLoops(), 0);
   // Linalg uses tile size = 0 for a loop to indicate not tiling that loop. Set
@@ -131,7 +132,7 @@ static linalg::LinalgOp tileUnfusedLoops(
   Optional<linalg::TiledLinalgOp> tiledOp = tileLinalgOp(
       builder, linalgOp,
       linalg::LinalgTilingOptions().setTileSizes(tileSizes).setLoopType(
-          linalg::LinalgTilingLoopType::ParallelLoops));
+          options.loopType));
   if (!tiledOp) return nullptr;
   linalgOp.erase();
   return tiledOp->op;
@@ -142,13 +143,16 @@ static linalg::LinalgOp tileUnfusedLoops(
 static Optional<linalg::TiledAndFusedLinalgOps> tileAndFuseLinalgOps(
     OpBuilder &builder, FuncOp funcOp, ArrayRef<linalg::LinalgOp> fusableOps,
     const linalg::LinalgDependenceGraph &dependenceGraph,
-    ArrayRef<int64_t> tileSizes, const TileAndFuseOptions &options) {
+    ArrayRef<int64_t> tileSizes, const TileAndFuseOptions &options,
+    StringRef marker) {
   // Get the tile sizes to use from the last fusable op and the tile+fuse all
   // ops.
   linalg::LinalgTilingOptions tilingOptions;
-  tilingOptions.setDistributionOptions(options.distributionOptions)
-      .setTileSizes(tileSizes)
-      .setLoopType(linalg::LinalgTilingLoopType::ParallelLoops);
+  if (options.distributionOptions.hasValue()) {
+    tilingOptions.setDistributionOptions(
+        options.distributionOptions.getValue());
+  }
+  tilingOptions.setTileSizes(tileSizes).setLoopType(options.loopType);
 
   Optional<linalg::TiledAndFusedLinalgOps> tiledAndFusedOps = llvm::None;
   if (fusableOps.size() == 1) {
@@ -174,14 +178,16 @@ static Optional<linalg::TiledAndFusedLinalgOps> tileAndFuseLinalgOps(
   }
 
   // Update the launch configuration.
-  SmallVector<unsigned, 2> distributedLoops =
-      llvm::to_vector<2>(tiledAndFusedOps->fusedLoopDims);
-  if (funcOp->getAttr(getNumWorkgroupsFnAttrName()) &&
-      failed(createNumWorkgroupsFromResultShape(
-          builder, fusableOps.back(), funcOp, getNumWorkgroupsFnAttrName(),
-          tileSizes, distributedLoops))) {
-    funcOp.emitError("failed to update launch configuration");
-    return llvm::None;
+  if (options.distributionOptions.hasValue()) {
+    SmallVector<unsigned, 2> distributedLoops =
+        llvm::to_vector<2>(tiledAndFusedOps->fusedLoopDims);
+    if (funcOp->getAttr(getNumWorkgroupsFnAttrName()) &&
+        failed(createNumWorkgroupsFromResultShape(
+            builder, fusableOps.back(), funcOp, getNumWorkgroupsFnAttrName(),
+            tileSizes, distributedLoops))) {
+      funcOp.emitError("failed to update launch configuration");
+      return llvm::None;
+    }
   }
 
   // Delete all the original operations.
@@ -189,9 +195,9 @@ static Optional<linalg::TiledAndFusedLinalgOps> tileAndFuseLinalgOps(
 
   // Add workgroup markers to all the tiled and fused operations.
   for (auto fusedProducer : tiledAndFusedOps->fusedProducers) {
-    setMarker(fusedProducer, getWorkgroupMarker());
+    setMarker(fusedProducer, marker);
   }
-  setMarker(tiledAndFusedOps->op, getWorkgroupMarker());
+  setMarker(tiledAndFusedOps->op, marker);
 
   return tiledAndFusedOps;
 }
@@ -199,7 +205,8 @@ static Optional<linalg::TiledAndFusedLinalgOps> tileAndFuseLinalgOps(
 LogicalResult tileAndFuseLinalgBufferOps(
     FuncOp funcOp, ArrayRef<linalg::LinalgOp> linalgOps,
     const linalg::LinalgDependenceGraph &dependenceGraph,
-    const LaunchConfig &launchConfig, const TileAndFuseOptions &options) {
+    const LaunchConfig &launchConfig, const TileAndFuseOptions &options,
+    StringRef marker) {
   // Collect all operations that are to be tiled-and-fused.
   MLIRContext *context = funcOp.getContext();
   SmallVector<linalg::LinalgOp, 4> fusableOps;
@@ -210,10 +217,11 @@ LogicalResult tileAndFuseLinalgBufferOps(
   if (fusableOps.empty()) return success();
 
   OpBuilder builder(context);
-  ArrayRef<int64_t> tileSizes = launchConfig.getTileSizes(fusableOps.back(), 0);
+  ArrayRef<int64_t> tileSizes =
+      launchConfig.getTileSizes(fusableOps.back(), options.tileLevel);
   Optional<linalg::TiledAndFusedLinalgOps> tiledAndFusedOps =
       tileAndFuseLinalgOps(builder, funcOp, fusableOps, dependenceGraph,
-                           tileSizes, options);
+                           tileSizes, options, marker);
   if (!tiledAndFusedOps) {
     return funcOp.emitError("failed to tile and fuse operations");
   }
@@ -251,16 +259,18 @@ LogicalResult tileAndFuseLinalgBufferOps(
   // Tile the unfused loops. Set the tile sizes for the fused loops to be zero
   // to avoid tiling them again.
   for (linalg::LinalgOp &fusedOp : tiledAndFusedOps->fusedProducers) {
-    ArrayRef<int64_t> fusedOpTileSizes = launchConfig.getTileSizes(fusedOp, 0);
-    linalg::LinalgOp tiledOp = tileUnfusedLoops(
-        builder, fusedOp, tiledAndFusedOps->fusedLoopDims, fusedOpTileSizes);
+    ArrayRef<int64_t> fusedOpTileSizes =
+        launchConfig.getTileSizes(fusedOp, options.tileLevel);
+    linalg::LinalgOp tiledOp =
+        tileUnfusedLoops(builder, fusedOp, tiledAndFusedOps->fusedLoopDims,
+                         fusedOpTileSizes, options);
     if (!tiledOp) {
       return fusedOp.emitError("unable to tile unfused loops");
     }
   }
   linalg::LinalgOp tiledOp =
       tileUnfusedLoops(builder, tiledAndFusedOps->op,
-                       tiledAndFusedOps->fusedLoopDims, tileSizes);
+                       tiledAndFusedOps->fusedLoopDims, tileSizes, options);
   if (!tiledOp) {
     return tiledAndFusedOps->op.emitError("unable to tile unfused loops");
   }

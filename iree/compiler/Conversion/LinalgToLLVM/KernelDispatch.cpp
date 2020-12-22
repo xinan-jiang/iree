@@ -174,18 +174,24 @@ Optional<LaunchConfig> initCPULaunchConfig(
 
   Optional<linalg::LinalgOp> rootOperation = llvm::None;
   for (auto linalgOp : linalgOps) {
-#define DISPATCH(opType)                                                     \
-  if (opType op = dyn_cast<opType>(linalgOp.getOperation())) {               \
-    if (rootOperation) {                                                     \
-      op.emitError("unhandled multiple root operations in dispatch region"); \
-      return llvm::None;                                                     \
-    }                                                                        \
-    rootOperation = linalgOp;                                                \
-    config.setTileSizes(                                                     \
-        op,                                                                  \
-        TileOpParameters::getSizes<opType, TilingLevel::WorkGroupTiles>(op), \
-        0);                                                                  \
-    continue;                                                                \
+#define DISPATCH(opType)                                                      \
+  if (opType op = dyn_cast<opType>(linalgOp.getOperation())) {                \
+    if (rootOperation) {                                                      \
+      op.emitError("unhandled multiple root operations in dispatch region");  \
+      return llvm::None;                                                      \
+    }                                                                         \
+    rootOperation = linalgOp;                                                 \
+    config.setTileSizes(                                                      \
+        op,                                                                   \
+        TileOpParameters::getSizes<opType, TilingLevel::WorkGroupTiles>(op),  \
+        0);                                                                   \
+    config.setTileSizes(                                                      \
+        op, TileOpParameters::getSizes<opType, TilingLevel::Level1Tiles>(op), \
+        1);                                                                   \
+    config.setTileSizes(                                                      \
+        op, TileOpParameters::getSizes<opType, TilingLevel::Level2Tiles>(op), \
+        2);                                                                   \
+    continue;                                                                 \
   }
 
     DISPATCH(linalg::MatmulOp)

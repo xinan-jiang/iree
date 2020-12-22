@@ -218,11 +218,12 @@ void LinalgTileAndDistributePass::runOnOperation() {
     TileAndFuseOptions tileAndFuseOptions = {workgroupDistributionOptions,
                                              allocateThreadLocalMemory};
     if (failed(tileAndFuseLinalgBufferOps(funcOp, linalgOpsVec, dependenceGraph,
-                                          launchConfig, tileAndFuseOptions))) {
+                                          launchConfig, tileAndFuseOptions,
+                                          getWorkgroupMarker()))) {
       return signalPassFailure();
     }
 
-    launchConfig.finalize(funcOp);
+    // launchConfig.finalize(funcOp);
   }
 }
 
