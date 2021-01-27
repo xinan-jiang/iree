@@ -16,7 +16,7 @@
 # These should focus on support by IREE itself, not for issues with specific runner tools. Place
 # those tests in iree/tools/test/
 
-load("//iree:lit_test.bzl", "iree_lit_test_suite")
+load("//build_tools/bazel:iree_check_test.bzl", "iree_check_single_backend_test_suite")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -24,12 +24,19 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
-iree_lit_test_suite(
-    name = "lit",
+iree_check_single_backend_test_suite(
+    name = "check_llvm",
     srcs = glob(["*.mlir"]),
-    data = [
-        "//iree/tools:IreeFileCheck",
-        "//iree/tools:iree-run-mlir",
+    compiler_flags = [
+        "-iree-codegen-llvm-experimental-linalg-on-tensors",
     ],
-    tags = ["hostonly"],
+    driver = "dylib",
+    target_backend = "dylib-llvm-aot",
+)
+
+test_suite(
+    name = "check",
+    tests = [
+        ":check_llvm",
+    ],
 )
