@@ -76,11 +76,8 @@ void addLinalgToLLVMPasses(OpPassManager &passManager) {
 
   // (HAL, IREE, Linalg, STD) -> LLVM
   // OpPassManager& llvmPassManager = passManager.nest<ModuleOp>();
-  if (clEnableLinalgOnTensors) {
-    passManager.addPass(createConvertToLLVM2Pass());
-  } else {
-    passManager.addPass(createConvertToLLVMPass());
-  }
+  passManager.addPass(createConvertToLLVM2Pass());
+
   passManager.addPass(createCanonicalizerPass());
   passManager.addPass(createCSEPass());
 

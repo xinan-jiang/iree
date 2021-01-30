@@ -1,4 +1,4 @@
-// RUN: iree-opt -iree-codegen-convert-to-llvm -split-input-file %s | IreeFileCheck %s
+// RUN: iree-opt -iree-codegen-convert-to-llvm-2 -split-input-file %s | IreeFileCheck %s
 
 // CHECK_LABEL: @convert_dynamic_shape
 func @convert_dynamic_shape() -> f32 {
@@ -13,6 +13,7 @@ func @convert_dynamic_shape() -> f32 {
 }
 hal.interface @legacy_io attributes {push_constants = 2 : i32, sym_visibility = "private"} {
     hal.interface.binding @arg0, set=0, binding=0, type="StorageBuffer", access="Read"
+    hal.interface.binding @arg1, set=0, binding=1, type="StorageBuffer", access="Write"
 }
 // CHECK: llvm.func @convert_dynamic_shape(%[[ARG0:.+]]: !llvm.ptr<ptr<i8>>, %[[ARG1:.+]]: !llvm.ptr<i32>, %[[WORKGROUP_ID:.+]]: !llvm.ptr<i32>, %[[WORKGROUP_COUNT:.+]]: !llvm.ptr<i32>, %[[WORKGROUP_SIZE:.+]]: !llvm.ptr<i32>)
 // CHECK: %[[PACKED_ARGS_PTR:.+]] = llvm.bitcast %[[ARG0]] : !llvm.ptr<ptr<i8>> to !llvm.ptr<struct<(ptr<f32>)>>

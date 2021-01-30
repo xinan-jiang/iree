@@ -325,12 +325,14 @@ class LLVMAOTTargetBackend final : public TargetBackend {
 
     // At this moment we are leaving MLIR LLVM dialect land translating module
     // into target independent LLVMIR.
+    printf("Running translateModuleToLLVMIR....\n");
     auto llvmModule = mlir::translateModuleToLLVMIR(targetOp.getInnerModule(),
                                                     context, libraryName);
     if (!llvmModule) {
       return targetOp.emitError() << "failed to translate the MLIR LLVM "
                                      "dialect to the native llvm::Module";
     }
+    printf("done translateModuleToLLVMIR....\n");
 
     // Try to grab a linker tool based on the options (and target environment).
     auto linkerTool = LinkerTool::getForTarget(targetTriple, options_);
